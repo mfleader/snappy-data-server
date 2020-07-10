@@ -5,17 +5,26 @@ import environs
 import aiofiles
 import starlette as star
 import databases
+import sqlalchemy as sqa
 from fastapi.middleware.wsgi import WSGIMiddleware
 from flask import Flask
 from flask_autoindex import AutoIndex
 from fastapi_users import models
 from fastapi_users import FastAPIUsers
-from fastapi_users.db import TortoiseBaseUserModel, TortoiseUserDatabase
-from tortoise.contrib.starlette import register_tortoise
-from fastapi_users.authentication import JWTAuthentication
-from fastapi_users.authentication import CookieAuthentication
-from fastapi_users.db import SQLAlchemyBaseUserTable, SQLAlchemyUserDatabase
+
+
+from fastapi_users.authentication import (JWTAuthentication, CookieAuthentication)
+
+from fastapi_users.db import (
+    SQLAlchemyBaseOAuthAccountTable,
+    SQLAlchemyBaseUserTable,
+    SQLAlchemyUserDatabase,
+)
 from sqlalchemy.ext.declarative import DeclarativeMeta, declarative_base
+
+from httpx_oauth.clients.google import GoogleOAuth2
+
+google_oauth_clinet = GoogleOAuth2('CLIENT_ID', 'CLIENT_SECRET')
 
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -33,7 +42,7 @@ VALID_EXTENSIONS = (
 )
 
 
-class User(models.BaseUser):
+class User(models.BaseUser, models.BaseOAuthAccountMixin):
     pass
 
 
@@ -66,13 +75,17 @@ class UserTable(Base, SQLAlchemyBaseUserTable):
     pass
 
 
+class OAuthAccount(SQLAlchemyBaseOAuthAccountTable, Base):
+    pass
+
+
 engine = sqa.create_engine(
     DATABASE_URL, connect_args={"check_same_thread": False}
 )
 Base.metadata.create_all(engine)
-
 users = UserTable.__table__
-user_db = SQLAlchemyUserDatabase(UserDB, database, users)
+oauth_accounts = OAuthAccount.__table__
+user_db = SQLAlchemyUserDatabase(UserDB, database, users, oauth_accounts)
 
 
 jwt_authentication = JWTAuthentication(secret=SECRET, lifetime_seconds=3600,
@@ -111,6 +124,13 @@ app.include_router(
     prefix = '/users', 
     tags=['users']
 )
+
+
+google_oauth_router = api_users.get_oauth_router(
+    google_oauth_clinet, SECRET, after_register=on_after_register
+)
+app.include_router(google_oauth_router, prefix='/auth/google', tags=['auth'])
+
 
 
 @app.get('/')
