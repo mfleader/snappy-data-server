@@ -5,6 +5,7 @@ import environs
 import aiofiles
 import starlette as star
 import databases
+import sqlalchemy as sqa
 from fastapi.middleware.wsgi import WSGIMiddleware
 from flask import Flask
 from flask_autoindex import AutoIndex
@@ -20,13 +21,14 @@ from sqlalchemy.ext.declarative import DeclarativeMeta, declarative_base
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = '/'.join((ROOT_DIR, 'results'))
-DATABASE_URL = f"sqlite:///{ROOT_DIR}/test.db"
+# DATABASE_URL = f"sqlite:///{ROOT_DIR}/test.db"
+DATABASE_URL = f'sqlite://'
 print(RESULTS_DIR)
 env = environs.Env()
 env.read_env(recurse=False)
 SECRET = "SECRET"
-HOST = env('DATA_SERVER_PUBLIC_HOST') or 'localhost'
-PORT = env('DATA_SERVER_PORT') or '8000'
+HOST = env('DATA_SERVER_PUBLIC_HOST')
+PORT = env('DATA_SERVER_PORT') 
 VALID_EXTENSIONS = (
     '.png', '.jpeg', '.jpg',
     '.tar.gz', '.tar.xz', '.tar.bz2'
@@ -69,9 +71,14 @@ class UserTable(Base, SQLAlchemyBaseUserTable):
 engine = sqa.create_engine(
     DATABASE_URL, connect_args={"check_same_thread": False}
 )
-Base.metadata.create_all(engine)
+Base.metadata.create_all(bind = engine)
+
+mdata = sqa.MetaData()
+for t in mdata.sorted_tables:
+    print(t.name)
 
 users = UserTable.__table__
+
 user_db = SQLAlchemyUserDatabase(UserDB, database, users)
 
 
@@ -168,3 +175,4 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     await database.disconnect()
+
