@@ -4,27 +4,21 @@ import fastapi as fast
 import environs
 import aiofiles
 import starlette as star
-import databases
+
+
 from fastapi.middleware.wsgi import WSGIMiddleware
 from flask import Flask
 from flask_autoindex import AutoIndex
-from fastapi_users import models
-from fastapi_users import FastAPIUsers
-from fastapi_users.db import TortoiseBaseUserModel, TortoiseUserDatabase
+import fastapi_users as fastusrs
+
 from tortoise.contrib.starlette import register_tortoise
-from fastapi_users.authentication import JWTAuthentication
-from fastapi_users.authentication import CookieAuthentication
 
-import sqlalchemy as sqa
-import fastapi_users
 
-from fastapi_users.db import SQLAlchemyBaseUserTable, SQLAlchemyUserDatabase
-from sqlalchemy.ext.declarative import DeclarativeMeta, declarative_base
 
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = '/'.join((ROOT_DIR, 'results'))
-DATABASE_URL = f"sqlite:///{ROOT_DIR}/test.db"
+DATABASE_URL = f"sqlite://{ROOT_DIR}/test.db"
 print(RESULTS_DIR)
 env = environs.Env()
 env.read_env(recurse=False)
@@ -37,21 +31,24 @@ VALID_EXTENSIONS = (
 )
 
 
-class User(models.BaseUser):
+class User(fastusrs.models.BaseUser):
     pass
 
 
-class UserCreate(User, models.BaseUserCreate):
+class UserCreate(fastusrs.models.BaseUserCreate):
     pass
 
 
-class UserUpdate(User, models.BaseUserUpdate):
+class UserUpdate(User, fastusrs.models.BaseUserUpdate):
     pass
 
 
-class UserDB(User, models.BaseUserDB):
+class UserDB(User, fastusrs.models.BaseUserDB):
     pass
 
+
+class UserModel(fastusrs.db.TortoiseBaseUserModel):
+    pass
 
 app = fast.FastAPI()
 
@@ -62,26 +59,24 @@ AutoIndex(flask_app, browse_root = RESULTS_DIR)
 app.mount('/results', WSGIMiddleware(flask_app))
 
 
-database = databases.Database(DATABASE_URL)
-Base: DeclarativeMeta = declarative_base()
+user_db = fastusrs.db.TortoiseUserDatabase(UserDB, UserModel)
+
+register_tortoise(
+    app,
+    # db_url = DATABASE_URL,
+    db_url = "sqlite://:memory:",
+    modules = {"models": ["app.main"]},
+    generate_schemas = True)
 
 
-class UserTable(Base, SQLAlchemyBaseUserTable):
-    pass
 
-
-engine = sqa.create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
-)
-Base.metadata.create_all(engine)
-
-users = UserTable.__table__
-user_db = SQLAlchemyUserDatabase(UserDB, database, users)
-
-
-jwt_authentication = JWTAuthentication(secret=SECRET, lifetime_seconds=3600,
+jwt_authentication = fastusrs.authentication.JWTAuthentication(
+    secret=SECRET, 
+    lifetime_seconds=3600,
     tokenUrl='/auth/jwt/login')
-cookie_authentication = CookieAuthentication(secret=SECRET, lifetime_seconds=3600)
+cookie_authentication = fastusrs.authentication.CookieAuthentication(
+    secret=SECRET, 
+    lifetime_seconds=3600)
 auth_backends = [
     jwt_authentication,
     cookie_authentication
@@ -92,7 +87,7 @@ def on_after_register(user: UserDB, request: fast.Request):
     print(f"User {user.id} has registered.")
 
 
-fastapi_users = FastAPIUsers(
+app_users = fastusrs.FastAPIUsers(
     user_db,
     auth_backends,
     User,
@@ -101,17 +96,17 @@ fastapi_users = FastAPIUsers(
     UserDB,
 )
 app.include_router(
-    fastapi_users.get_auth_router(jwt_authentication),
+    app_users.get_auth_router(jwt_authentication),
     prefix = '/auth/jwt',
     tags = ['auth']
 )
 app.include_router(
-    fastapi_users.get_register_router(on_after_register),
+    app_users.get_register_router(on_after_register),
     prefix="/auth",
     tags=["auth"],
 )
 app.include_router(
-    fastapi_users.get_users_router(), 
+    app_users.get_users_router(), 
     prefix = '/users', 
     tags=['users']
 )
@@ -164,11 +159,3 @@ async def upload(
     return f'{HOST}:{PORT}/results/{file.filename}'
 
 
-@app.on_event("startup")
-async def startup():
-    await database.connect()
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    await database.disconnect()
