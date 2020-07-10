@@ -14,10 +14,6 @@ from fastapi_users.db import TortoiseBaseUserModel, TortoiseUserDatabase
 from tortoise.contrib.starlette import register_tortoise
 from fastapi_users.authentication import JWTAuthentication
 from fastapi_users.authentication import CookieAuthentication
-
-import sqlalchemy as sqa
-import fastapi_users
-
 from fastapi_users.db import SQLAlchemyBaseUserTable, SQLAlchemyUserDatabase
 from sqlalchemy.ext.declarative import DeclarativeMeta, declarative_base
 
@@ -41,7 +37,7 @@ class User(models.BaseUser):
     pass
 
 
-class UserCreate(User, models.BaseUserCreate):
+class UserCreate(models.BaseUserCreate):
     pass
 
 
@@ -92,7 +88,7 @@ def on_after_register(user: UserDB, request: fast.Request):
     print(f"User {user.id} has registered.")
 
 
-fastapi_users = FastAPIUsers(
+api_users = FastAPIUsers(
     user_db,
     auth_backends,
     User,
@@ -101,17 +97,17 @@ fastapi_users = FastAPIUsers(
     UserDB,
 )
 app.include_router(
-    fastapi_users.get_auth_router(jwt_authentication),
+    api_users.get_auth_router(jwt_authentication),
     prefix = '/auth/jwt',
     tags = ['auth']
 )
 app.include_router(
-    fastapi_users.get_register_router(on_after_register),
+    api_users.get_register_router(on_after_register),
     prefix="/auth",
     tags=["auth"],
 )
 app.include_router(
-    fastapi_users.get_users_router(), 
+    api_users.get_users_router(), 
     prefix = '/users', 
     tags=['users']
 )
