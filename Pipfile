@@ -13,7 +13,8 @@ python-multipart = "==0.0.5"
 environs = "==8.0.0"
 Flask = "==1.1.2"
 Flask-AutoIndex = "==0.6.6"
-
+fastapi-users = {extras = ["mongodb"], version = "*"}
+motor = "*"
 
 [requires]
 python_version = "3.8"

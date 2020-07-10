@@ -5,24 +5,22 @@ import environs
 import aiofiles
 import starlette as star
 import databases
-import sqlalchemy as sqa
+
 from fastapi.middleware.wsgi import WSGIMiddleware
 from flask import Flask
 from flask_autoindex import AutoIndex
 from fastapi_users import models
 from fastapi_users import FastAPIUsers
-from fastapi_users.db import TortoiseBaseUserModel, TortoiseUserDatabase
-from tortoise.contrib.starlette import register_tortoise
-from fastapi_users.authentication import JWTAuthentication
-from fastapi_users.authentication import CookieAuthentication
-from fastapi_users.db import SQLAlchemyBaseUserTable, SQLAlchemyUserDatabase
-from sqlalchemy.ext.declarative import DeclarativeMeta, declarative_base
+
+import motor.motor_asyncio
+from fastapi_users.authentication import (JWTAuthentication, CookieAuthentication)
+from fastapi_users.db import MongoDBUserDatabase
 
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = '/'.join((ROOT_DIR, 'results'))
-# DATABASE_URL = f"sqlite:///{ROOT_DIR}/test.db"
-DATABASE_URL = f'sqlite://'
+
+DATABASE_URL = 'mongodb://localhost:27107'
 print(RESULTS_DIR)
 env = environs.Env()
 env.read_env(recurse=False)
@@ -60,26 +58,13 @@ AutoIndex(flask_app, browse_root = RESULTS_DIR)
 app.mount('/results', WSGIMiddleware(flask_app))
 
 
-database = databases.Database(DATABASE_URL)
-Base: DeclarativeMeta = declarative_base()
-
-
-class UserTable(Base, SQLAlchemyBaseUserTable):
-    pass
-
-
-engine = sqa.create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
+client = motor.motor_asyncio.AsyncIOMotorClient(
+    DATABASE_URL
 )
-Base.metadata.create_all(bind = engine)
+db = client['database_name']
+collection = db['users']
+user_db = MongoDBUserDatabase(UserDB, collection)
 
-mdata = sqa.MetaData()
-for t in mdata.sorted_tables:
-    print(t.name)
-
-users = UserTable.__table__
-
-user_db = SQLAlchemyUserDatabase(UserDB, database, users)
 
 
 jwt_authentication = JWTAuthentication(secret=SECRET, lifetime_seconds=3600,
@@ -165,14 +150,3 @@ async def upload(
         await buffer.write(contents)
 
     return f'{HOST}:{PORT}/results/{file.filename}'
-
-
-@app.on_event("startup")
-async def startup():
-    await database.connect()
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    await database.disconnect()
-
